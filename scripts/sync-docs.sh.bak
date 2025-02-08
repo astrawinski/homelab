@@ -7,19 +7,19 @@ cd "$(dirname "$0")/../" || exit
 mkdir -p logs
 
 # Define the log file
-LOG_FILE="logs/repo-sync.log"
+LOG_FILE="logs/docs-sync.log"
 
-# Check for all changes in the repository
-CHANGED_FILES=$(git status --porcelain)
+# Check for changes in all subdirectories under docs/
+CHANGED_FILES=$(git diff --name-status -- docs/)
 
 # If no changes, exit
 if [ -z "$CHANGED_FILES" ]; then
-    echo "$(date +"%Y-%m-%d %H:%M:%S") - No changes detected in repo. Exiting." | tee -a "$LOG_FILE"
+    echo "$(date +"%Y-%m-%d %H:%M:%S") - No changes detected in docs/. Exiting." | tee -a "$LOG_FILE"
     exit 0
 fi
 
 # Show detected changes
-echo "Detected changes in homelab repository:"
+echo "Detected changes in homelab documentation:"
 echo "$CHANGED_FILES"
 
 # Log the changes
@@ -29,7 +29,7 @@ echo "---------------------------------" >> "$LOG_FILE"
 
 # Show a preview of what changed
 echo -e "\n--- Git Diff Preview ---\n"
-git diff
+git diff -- docs/
 
 # Ask for confirmation before committing
 read -p "Commit and push these changes? (y/n): " CONFIRM
@@ -40,8 +40,8 @@ if [[ "$CONFIRM" != "y" ]]; then
 fi
 
 # Commit and push the changes
-git add .
-git commit -m "Updated homelab repository"
+git add docs/
+git commit -m "Updated homelab documentation"
 git push origin main
 
 # Log successful commit

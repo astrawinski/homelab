@@ -1,18 +1,5 @@
 #!/bin/bash
 
-# Function to copy output to clipboard
-copy_to_clipboard() {
-    if command -v xclip &> /dev/null; then
-        echo "$1" | xclip -selection clipboard
-        echo "Copied output to clipboard (xclip)."
-    elif command -v pbcopy &> /dev/null; then
-        echo "$1" | pbcopy
-        echo "Copied output to clipboard (pbcopy)."
-    else
-        echo "Clipboard copy failed: No clipboard utility found (install xclip or pbcopy)." >&2
-    fi
-}
-
 # Navigate to the homelab directory (adjust this path if needed)
 cd "$(dirname "$0")/../" || exit
 
@@ -21,12 +8,6 @@ mkdir -p logs
 
 # Define the log file
 LOG_FILE="logs/repo-sync.log"
-COPY_TO_CLIPBOARD=false
-
-# Check for command-line arguments
-if [[ "$1" == "--copy" ]]; then
-    COPY_TO_CLIPBOARD=true
-fi
 
 # Check for all changes in the repository
 CHANGED_FILES=$(git status --porcelain)
@@ -35,9 +16,6 @@ CHANGED_FILES=$(git status --porcelain)
 if [ -z "$CHANGED_FILES" ]; then
     OUTPUT="$(date +"%Y-%m-%d %H:%M:%S") - No changes detected in repo. Exiting."
     echo "$OUTPUT" | tee -a "$LOG_FILE"
-    if [[ "$COPY_TO_CLIPBOARD" == true ]]; then
-        copy_to_clipboard "$OUTPUT"
-    fi
     exit 0
 fi
 
@@ -52,17 +30,13 @@ echo "---------------------------------" >> "$LOG_FILE"
 
 # Show a preview of what changed
 echo -e "\n--- Git Diff Preview ---\n"
-GIT_DIFF_OUTPUT=$(git diff)
-echo "$GIT_DIFF_OUTPUT"
+git diff
 
 # Ask for confirmation before committing
 read -p "Commit and push these changes? (y/n): " CONFIRM
 if [[ "$CONFIRM" != "y" ]]; then
     OUTPUT="$(date +"%Y-%m-%d %H:%M:%S") - Commit aborted by user."
     echo "$OUTPUT" | tee -a "$LOG_FILE"
-    if [[ "$COPY_TO_CLIPBOARD" == true ]]; then
-        copy_to_clipboard "$OUTPUT"
-    fi
     echo "Aborting commit."
     exit 0
 fi
@@ -81,11 +55,6 @@ git push origin main
 # Log successful commit
 OUTPUT="$(date +"%Y-%m-%d %H:%M:%S") - Changes successfully committed and pushed. Commit message: $COMMIT_MESSAGE"
 echo "$OUTPUT" | tee -a "$LOG_FILE"
-
-# Copy output to clipboard if enabled
-if [[ "$COPY_TO_CLIPBOARD" == true ]]; then
-    copy_to_clipboard "$OUTPUT"
-fi
 
 echo "Changes successfully committed and pushed!"
 exit 0

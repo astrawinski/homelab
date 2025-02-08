@@ -39,12 +39,17 @@ if [[ "$CONFIRM" != "y" ]]; then
     exit 0
 fi
 
-# Commit and push the changes
-git add .
-git commit -m "Updated homelab repository"
+# Add all changes except .bak and temp files
+git add --all -- ':!*.bak' ':!temp/' ':!*.swp' ':!*.tmp'
+
+# Create a commit message with a timestamp
+COMMIT_MESSAGE="Updated homelab repository - $(date +"%Y-%m-%d %H:%M:%S")"
+git commit -m "$COMMIT_MESSAGE"
+
+# Push the changes
 git push origin main
 
 # Log successful commit
-echo "$(date +"%Y-%m-%d %H:%M:%S") - Changes successfully committed and pushed." | tee -a "$LOG_FILE"
+echo "$(date +"%Y-%m-%d %H:%M:%S") - Changes successfully committed and pushed. Commit message: $COMMIT_MESSAGE" | tee -a "$LOG_FILE"
 echo "Changes successfully committed and pushed!"
 exit 0

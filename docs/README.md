@@ -83,6 +83,6 @@ homelab/
 1. Populate individual documentation files with initial content.
 2. Keep this documentation updated as the homelab evolves.
 3. Consider using a tool like MkDocs for a web-friendly version of the documentation.
-4. Automate documentation updates.
+4. Automate documentation updates, and inform ChatGPT.
 
 ---

@@ -41,6 +41,8 @@ fi
 
 # Add all changes except .bak and temp files
 git add --all -- ':!*.bak' ':!temp/' ':!*.swp' ':!*.tmp'
+git rm --cached $(git ls-files --deleted) 2>/dev/null
+
 
 # Create a commit message with a timestamp
 COMMIT_MESSAGE="Updated homelab repository - $(date +"%Y-%m-%d %H:%M:%S")"

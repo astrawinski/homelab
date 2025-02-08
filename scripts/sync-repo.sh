@@ -1,5 +1,18 @@
 #!/bin/bash
 
+# Function to copy output to clipboard
+copy_to_clipboard() {
+    if command -v xclip &> /dev/null; then
+        echo "$1" | xclip -selection clipboard
+        echo "Copied output to clipboard (xclip)."
+    elif command -v pbcopy &> /dev/null; then
+        echo "$1" | pbcopy
+        echo "Copied output to clipboard (pbcopy)."
+    else
+        echo "Clipboard copy failed: No clipboard utility found (install xclip or pbcopy)." >&2
+    fi
+}
+
 # Navigate to the homelab directory (adjust this path if needed)
 cd "$(dirname "$0")/../" || exit
 
@@ -23,7 +36,7 @@ if [ -z "$CHANGED_FILES" ]; then
     OUTPUT="$(date +"%Y-%m-%d %H:%M:%S") - No changes detected in repo. Exiting."
     echo "$OUTPUT" | tee -a "$LOG_FILE"
     if [[ "$COPY_TO_CLIPBOARD" == true ]]; then
-        echo "$OUTPUT" | copy_to_clipboard
+        copy_to_clipboard "$OUTPUT"
     fi
     exit 0
 fi
@@ -48,7 +61,7 @@ if [[ "$CONFIRM" != "y" ]]; then
     OUTPUT="$(date +"%Y-%m-%d %H:%M:%S") - Commit aborted by user."
     echo "$OUTPUT" | tee -a "$LOG_FILE"
     if [[ "$COPY_TO_CLIPBOARD" == true ]]; then
-        echo "$OUTPUT" | copy_to_clipboard
+        copy_to_clipboard "$OUTPUT"
     fi
     echo "Aborting commit."
     exit 0
@@ -71,19 +84,8 @@ echo "$OUTPUT" | tee -a "$LOG_FILE"
 
 # Copy output to clipboard if enabled
 if [[ "$COPY_TO_CLIPBOARD" == true ]]; then
-    echo "$OUTPUT" | copy_to_clipboard
+    copy_to_clipboard "$OUTPUT"
 fi
 
 echo "Changes successfully committed and pushed!"
 exit 0
-
-# Function to copy output to clipboard
-copy_to_clipboard() {
-    if command -v xclip &> /dev/null; then
-        xclip -selection clipboard
-    elif command -v pbcopy &> /dev/null; then
-        pbcopy
-    else
-        echo "Clipboard copy failed: No clipboard utility found (install xclip or pbcopy)." >&2
-    fi
-}

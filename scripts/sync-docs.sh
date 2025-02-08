@@ -9,8 +9,8 @@ mkdir -p logs
 # Define the log file
 LOG_FILE="logs/docs-sync.log"
 
-# Check for changes in the docs/ directory
-CHANGED_FILES=$(git diff --name-status docs/)
+# Check for changes in all subdirectories under docs/
+CHANGED_FILES=$(git diff --name-status -- docs/)
 
 # If no changes, exit
 if [ -z "$CHANGED_FILES" ]; then

@@ -6,7 +6,7 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-SSH_USER="subnet"
+SSH_USER="ansible"
 AUTHORIZED_KEYS="/home/$SSH_USER/.ssh/authorized_keys"
 
 # Ensure SSH key exists

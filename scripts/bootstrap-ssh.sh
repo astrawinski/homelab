@@ -6,35 +6,53 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-SSH_USER="subnet"
-SSH_DIR="/home/$SSH_USER/.ssh"
-AUTHORIZED_KEYS="$SSH_DIR/authorized_keys"
+ANSIBLE_USER="ansible"
+ANSIBLE_DIR="/home/$ANSIBLE_USER/.ssh"
+AUTHORIZED_KEYS="$ANSIBLE_DIR/authorized_keys"
 
+# Create the ansible user if it doesn't exist
+echo "Creating ansible user..."
+if ! id "$ANSIBLE_USER" &>/dev/null; then
+    useradd -m -s /bin/bash "$ANSIBLE_USER"
+    echo "User $ANSIBLE_USER created."
+else
+    echo "User $ANSIBLE_USER already exists."
+fi
+
+# Update package list
 echo "Updating package list..."
 apt update -y
 
+# Install OpenSSH Server
 echo "Installing OpenSSH Server..."
 apt install -y openssh-server
 
+# Enable and start SSH service
 echo "Enabling and starting SSH service..."
 systemctl enable ssh
 systemctl start ssh
 
+# Allow SSH through the firewall
 echo "Allowing SSH through the firewall..."
 ufw allow OpenSSH
 ufw enable
 
 # Ensure SSH directory exists and set correct permissions
 echo "Configuring SSH directory and permissions..."
-mkdir -p "$SSH_DIR"
-chmod 700 "$SSH_DIR"
+mkdir -p "$ANSIBLE_DIR"
+chmod 700 "$ANSIBLE_DIR"
 touch "$AUTHORIZED_KEYS"
 chmod 600 "$AUTHORIZED_KEYS"
-chown -R $SSH_USER:$SSH_USER "$SSH_DIR"
+chown -R $ANSIBLE_USER:$ANSIBLE_USER "$ANSIBLE_DIR"
 
-echo "✅ SSH is now enabled and ready for key authentication."
+# Enable passwordless sudo
+echo "Enabling passwordless sudo for $ANSIBLE_USER..."
+echo "$ANSIBLE_USER ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/$ANSIBLE_USER
+chmod 0440 /etc/sudoers.d/$ANSIBLE_USER
+
+echo "✅ SSH is now enabled, and passwordless sudo is configured for $ANSIBLE_USER."
 echo ""
 echo "Next, from your remote machine, copy your SSH key using:"
-echo "    ssh-copy-id $SSH_USER@$(hostname -I | awk '{print $1}')"
+echo "    ssh-copy-id $ANSIBLE_USER@$(hostname -I | awk '{print $1}')"
 echo ""
 echo "Once done, run the 'secure-ssh.sh' script to disable password login."

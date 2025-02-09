@@ -9,12 +9,15 @@ fi
 ANSIBLE_USER="ansible"
 ANSIBLE_DIR="/home/$ANSIBLE_USER/.ssh"
 AUTHORIZED_KEYS="$ANSIBLE_DIR/authorized_keys"
+DEFAULT_PASSWORD="ChangeMeNow!"
 
 # Create the ansible user if it doesn't exist
 echo "Creating ansible user..."
 if ! id "$ANSIBLE_USER" &>/dev/null; then
     useradd -m -s /bin/bash "$ANSIBLE_USER"
-    echo "User $ANSIBLE_USER created."
+    echo "$ANSIBLE_USER:$DEFAULT_PASSWORD" | chpasswd
+    passwd --expire "$ANSIBLE_USER"
+    echo "User $ANSIBLE_USER created with temporary password: $DEFAULT_PASSWORD"
 else
     echo "User $ANSIBLE_USER already exists."
 fi
@@ -51,6 +54,9 @@ echo "$ANSIBLE_USER ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/$ANSIBLE_USER
 chmod 0440 /etc/sudoers.d/$ANSIBLE_USER
 
 echo "✅ SSH is now enabled, and passwordless sudo is configured for $ANSIBLE_USER."
+echo ""
+echo "Temporary password for $ANSIBLE_USER: $DEFAULT_PASSWORD"
+echo "It must be changed on first login."
 echo ""
 echo "Next, from your remote machine, copy your SSH key using:"
 echo "    ssh-copy-id $ANSIBLE_USER@$(hostname -I | awk '{print $1}')"

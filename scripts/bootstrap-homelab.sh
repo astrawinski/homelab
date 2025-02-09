@@ -13,7 +13,7 @@ apt update && apt upgrade -y
 
 # Install required packages
 echo "Installing required packages..."
-apt install -y docker.io ufw git openssh-server
+apt install -y docker.io docker-compose ufw git openssh-server
 
 # Enable & start SSH
 echo "Configuring SSH..."

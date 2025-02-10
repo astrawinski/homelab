@@ -56,10 +56,8 @@ chmod 0440 /etc/sudoers.d/$ANSIBLE_USER
 # Detect if running inside VirtualBox
 if dmidecode -s system-product-name | grep -qi "VirtualBox"; then
     echo "Running inside a VirtualBox VM. Installing Guest Additions..."
-    apt install -y virtualbox-guest-utils virtualbox-guest-x11 virtualbox-guest-dkms
-    systemctl enable vboxadd
-    systemctl start vboxadd
-    echo "VirtualBox Guest Additions installed and enabled."
+    apt install -y virtualbox-guest-utils virtualbox-guest-x11
+    echo "VirtualBox Guest Additions installed."
 else
     echo "Not running inside a VirtualBox VM. Skipping Guest Additions installation."
 fi

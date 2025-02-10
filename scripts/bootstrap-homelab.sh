@@ -1,77 +1,80 @@
 #!/bin/bash
+set -e  # Exit immediately on error
 
-# Ensure the script runs as root
+# Ensure we are running as root
 if [[ $EUID -ne 0 ]]; then
    echo "This script must be run as root. Try: sudo $0"
    exit 1
 fi
 
-ANSIBLE_USER="ansible"
-ANSIBLE_DIR="/home/$ANSIBLE_USER/.ssh"
-AUTHORIZED_KEYS="$ANSIBLE_DIR/authorized_keys"
-DEFAULT_PASSWORD="ChangeMeNow!"
+# Update system packages
+echo "Updating system..."
+apt update && apt upgrade -y
 
-# Create the ansible user if it doesn't exist
-echo "Creating ansible user..."
-if ! id "$ANSIBLE_USER" &>/dev/null; then
-    useradd -m -s /bin/bash "$ANSIBLE_USER"
-    echo "$ANSIBLE_USER:$DEFAULT_PASSWORD" | chpasswd
-    passwd --expire "$ANSIBLE_USER"
-    echo "User $ANSIBLE_USER created with temporary password: $DEFAULT_PASSWORD"
-else
-    echo "User $ANSIBLE_USER already exists."
-fi
+# Install required packages
+echo "Installing required packages..."
+apt install -y docker.io docker-compose ufw git openssh-server
 
-# Update package list
-echo "Updating package list..."
-apt update -y
-
-# Install OpenSSH Server
-echo "Installing OpenSSH Server..."
-apt install -y openssh-server
-
-# Enable and start SSH service
-echo "Enabling and starting SSH service..."
+# Enable & start SSH
+echo "Configuring SSH..."
 systemctl enable ssh
 systemctl start ssh
-
-# Allow SSH through the firewall
-echo "Allowing SSH through the firewall..."
 ufw allow OpenSSH
 ufw enable
 
-# Ensure SSH directory exists and set correct permissions
-echo "Configuring SSH directory and permissions..."
-mkdir -p "$ANSIBLE_DIR"
-chmod 700 "$ANSIBLE_DIR"
-touch "$AUTHORIZED_KEYS"
-chmod 600 "$AUTHORIZED_KEYS"
-chown -R $ANSIBLE_USER:$ANSIBLE_USER "$ANSIBLE_DIR"
+# Ensure /opt/vaultwarden exists
+mkdir -p /opt/vaultwarden/data
 
-# Enable passwordless sudo
-echo "Enabling passwordless sudo for $ANSIBLE_USER..."
-echo "$ANSIBLE_USER ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/$ANSIBLE_USER
-chmod 0440 /etc/sudoers.d/$ANSIBLE_USER
+# Check for existing Vaultwarden data
+if [ -z "$(ls -A /opt/vaultwarden/data 2>/dev/null)" ]; then
+    echo "No existing Vaultwarden data found."
+    read -p "Do you have a backup to restore? (y/N) " restore_choice
 
-# Detect if running inside VirtualBox
-if dmidecode -s system-product-name | grep -qi "VirtualBox"; then
-    echo "Running inside a VirtualBox VM. Installing Guest Additions..."
-    apt install -y virtualbox-guest-utils virtualbox-guest-x11
-    echo "VirtualBox Guest Additions installed."
+    if [[ "$restore_choice" =~ ^[Yy]$ ]]; then
+        read -p "Enter the path to the backup directory (e.g., /mnt/backup/vaultwarden): " backup_path
+        if [ -d "$backup_path" ]; then
+            echo "Restoring Vaultwarden data from $backup_path..."
+            cp -r "$backup_path"/* /opt/vaultwarden/data/
+            echo "Vaultwarden data restored successfully."
+        else
+            echo "Invalid backup path. Starting fresh."
+        fi
+    else
+        echo "No backup provided. Starting a fresh Vaultwarden instance."
+    fi
 else
-    echo "Not running inside a VirtualBox VM. Skipping Guest Additions installation."
+    echo "Existing Vaultwarden data found. Using current data."
 fi
 
-echo "✅ SSH is now enabled, and passwordless sudo is configured for $ANSIBLE_USER."
-echo ""
-echo "Temporary password for $ANSIBLE_USER: $DEFAULT_PASSWORD"
-echo "It must be changed on first login."
-echo ""
-echo "From your remote machine, login with ssh:"
-echo "    ssh $ANSIBLE_USER@$(hostname -I | awk '{print $1}')"
-echo "And change your password."
-echo ""
-echo "Next, from your remote machine, copy your SSH key using:"
-echo "    ssh-copy-id $ANSIBLE_USER@$(hostname -I | awk '{print $1}')"
-echo ""
-echo "Once done, run the 'secure-ssh.sh' script to disable password login."
+# Deploy Vaultwarden with Docker Compose
+echo "Deploying Vaultwarden..."
+cat <<EOF > /opt/vaultwarden/docker-compose.yml
+version: '3'
+services:
+  vaultwarden:
+    image: bitwardenrs/server:latest
+    restart: unless-stopped
+    volumes:
+      - /opt/vaultwarden/data:/data
+    ports:
+      - "80:80"
+    environment:
+      - WEBSOCKET_ENABLED=true
+      - SIGNUPS_ALLOWED=false
+EOF
+
+# Start Vaultwarden
+cd /opt/vaultwarden
+docker-compose up -d
+
+echo "Vaultwarden is now running. Access it at http://$(hostname -I | awk '{print $1}')"
+
+# Generate SSH key for ansible user
+echo "Creating ansible user and SSH key..."
+useradd -m -s /bin/bash ansible
+mkdir -p /home/ansible/.ssh
+ssh-keygen -t ed25519 -f /home/ansible/.ssh/id_ed25519 -N ""
+chown -R ansible:ansible /home/ansible/.ssh
+
+echo "Done! Now copy the SSH key to your workstation:"
+echo "  ssh-copy-id ansible@$(hostname -I | awk '{print $1}')"

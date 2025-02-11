@@ -32,21 +32,10 @@ homelab/
 
 ## Inventory Management
 
-- Inventories define the hosts Ansible manages.
+- Inventories will define the hosts Ansible manages.
 - Inventory files are stored in `inventories/` and can be static (`hosts.ini`) or dynamic.
-- Example static inventory:
-  
-  ```ini
-  [proxmox]
-  proxmox01.internal.strawinski.net
 
-  [unifi]
-  udm-se.internal.strawinski.net
-  ```
-
----
-
-## Key Playbooks
+## Key Playbooks (Examples for now)
 
 | Playbook                 | Description |
 |--------------------------|-------------|

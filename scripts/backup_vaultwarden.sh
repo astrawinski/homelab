@@ -60,19 +60,35 @@ restore_vaultwarden() {
 
 # Display usage information
 usage() {
-    echo "Usage: $0 {backup|restore}"
-    echo "  backup   - Creates a backup of Vaultwarden data in $BACKUP_DIR"
-    echo "  restore  - Restores Vaultwarden data from $BACKUP_DIR"
-    exit 1
+    echo "Usage: $0 [OPTIONS]"
+    echo "Options:"
+    echo "  -b, --backup     Backup Vaultwarden data to $BACKUP_DIR"
+    echo "  -r, --restore    Restore Vaultwarden data from $BACKUP_DIR"
+    echo "  -h, --help       Show this help message and exit"
+    exit 0
 }
 
-# Validate command-line arguments
-if [[ $# -ne 1 ]]; then
+# Parse command-line arguments
+if [[ $# -eq 0 ]]; then
     usage
 fi
 
-case "$1" in
-    backup) backup_vaultwarden ;;
-    restore) restore_vaultwarden ;;
-    *) usage ;;
-esac
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+    -b | --backup)
+        backup_vaultwarden
+        shift
+        ;;
+    -r | --restore)
+        restore_vaultwarden
+        shift
+        ;;
+    -h | --help)
+        usage
+        ;;
+    *)
+        echo "Invalid option: $1"
+        usage
+        ;;
+    esac
+done

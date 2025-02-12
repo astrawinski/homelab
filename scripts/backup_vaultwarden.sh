@@ -49,7 +49,7 @@ restore_vaultwarden() {
     stop_vaultwarden
 
     echo "Restoring data directory..."
-    rsync -av --progress "$BACKUP_DIR/data/" "$DATA_DIR/"
+    rsync -av --progress "$BACKUP_DIR/" "$DATA_DIR/"
 
     echo "Setting correct permissions..."
     chown -R root:root "$DATA_DIR"

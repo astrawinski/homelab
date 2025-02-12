@@ -75,7 +75,7 @@ if [ -z "$(ls -A /opt/vaultwarden/data 2>/dev/null)" ]; then
   read -pr "Do you have a backup to restore? (y/N) " restore_choice
 
   if [[ "$restore_choice" =~ ^[Yy]$ ]]; then
-    read -pr "Enter the path to the backup directory (e.g., /mnt/backup/vaultwarden): " backup_path
+    read -pr "Enter the path to the backup directory (e.g., /media/sf_E_DRIVE/vaultwarden_backup): " backup_path
     if [ -d "$backup_path" ]; then
       echo "Restoring Vaultwarden data from $backup_path..."
       cp -r "$backup_path"/* /opt/vaultwarden/data/

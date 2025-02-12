@@ -18,50 +18,73 @@ VAULTWARDEN_SSL_DIR="$VAULTWARDEN_DIR/ssl"
 VAULTWARDEN_CERT="$VAULTWARDEN_SSL_DIR/vaultwarden.crt"
 VAULTWARDEN_KEY="$VAULTWARDEN_SSL_DIR/vaultwarden.key"
 
-BACKUP_PATH="/media/sf_E_DRIVE/vaultwarden_backup"  # Set your backup location
+BACKUP_PATH="/media/sf_E_DRIVE/vaultwarden_backup" # Backup location
 
 # Detect hostname and IP for SSL certificate
 HOSTNAME_FQDN=$(hostname -f 2>/dev/null || hostname)
 HOST_IP=$(hostname -I | awk '{print $1}')
 
-# Update system packages
-echo "Updating system..."
+# Step 1: Update system packages (if needed)
+echo "Checking for package updates..."
 apt update && apt upgrade -y
 
-# Install required packages
-echo "Installing required packages..."
-apt install -y docker.io docker-compose ufw git openssh-server openssl
+# Step 2: Install required packages (if not installed)
+REQUIRED_PACKAGES=("docker.io" "docker-compose" "ufw" "git" "openssh-server" "openssl")
+for pkg in "${REQUIRED_PACKAGES[@]}"; do
+  if ! dpkg -l | grep -qw "$pkg"; then
+    echo "Installing $pkg..."
+    apt install -y "$pkg"
+  else
+    echo "$pkg is already installed. Skipping."
+  fi
+done
 
-# Enable & start SSH
-echo "Configuring SSH..."
-systemctl enable ssh
-systemctl start ssh
-ufw allow OpenSSH
-ufw enable
+# Step 3: Enable & start SSH if not running
+if ! systemctl is-active --quiet ssh; then
+  echo "Starting SSH service..."
+  systemctl enable ssh
+  systemctl start ssh
+else
+  echo "SSH service is already running."
+fi
 
-# Ensure the Vaultwarden backup exists
+# Step 4: Configure UFW (skip if already configured)
+if ! ufw status | grep -q "OpenSSH"; then
+  echo "Configuring firewall for SSH..."
+  ufw allow OpenSSH
+  ufw enable
+else
+  echo "Firewall already configured. Skipping."
+fi
+
+# Step 5: Ensure Vaultwarden backup exists before restoring
 if [[ ! -d "$BACKUP_PATH/data" ]]; then
   echo "❌ ERROR: Vaultwarden backup not found at $BACKUP_PATH/data"
   echo "Backup is **mandatory**. Please ensure the correct path is available before running this script."
   exit 1
 fi
 
-# Ensure Vaultwarden directories exist
+# Step 6: Ensure Vaultwarden directories exist
 mkdir -p "$VAULTWARDEN_DATA_DIR"
 mkdir -p "$VAULTWARDEN_SSL_DIR"
 
-# Restore Vaultwarden data
-echo "Restoring Vaultwarden data from $BACKUP_PATH..."
-rsync -av "$BACKUP_PATH/data/" "$VAULTWARDEN_DATA_DIR/"
-echo "✅ Vaultwarden data restored successfully."
+# Step 7: Restore Vaultwarden data only if not already restored
+if [[ -z "$(ls -A $VAULTWARDEN_DATA_DIR 2>/dev/null)" ]]; then
+  echo "Restoring Vaultwarden data from $BACKUP_PATH..."
+  rsync -av "$BACKUP_PATH/data/" "$VAULTWARDEN_DATA_DIR/"
+  echo "✅ Vaultwarden data restored successfully."
+else
+  echo "Vaultwarden data already exists. Skipping restore."
+fi
 
-# Generate SSL certificate for:
-echo "Generating SSL certificate for:"
-echo "  - CN: $HOSTNAME_FQDN"
-echo "  - SAN: $HOST_IP"
+# Step 8: Generate SSL certificate only if missing
+if [[ ! -f "$VAULTWARDEN_CERT" || ! -f "$VAULTWARDEN_KEY" ]]; then
+  echo "Generating SSL certificate for:"
+  echo "  - CN: $HOSTNAME_FQDN"
+  echo "  - SAN: $HOST_IP"
 
-# Generate OpenSSL config file with SAN
-cat <<EOF >$VAULTWARDEN_SSL_DIR/openssl.cnf
+  # Generate OpenSSL config file with SAN
+  cat <<EOF >"$VAULTWARDEN_SSL_DIR/openssl.cnf"
 [req]
 distinguished_name = req_distinguished_name
 req_extensions = v3_req
@@ -79,17 +102,21 @@ DNS.1 = $HOSTNAME_FQDN
 IP.1 = $HOST_IP
 EOF
 
-# Generate self-signed certificate
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout $VAULTWARDEN_KEY \
-  -out $VAULTWARDEN_CERT \
-  -config $VAULTWARDEN_SSL_DIR/openssl.cnf
+  # Generate self-signed certificate
+  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout "$VAULTWARDEN_KEY" \
+    -out "$VAULTWARDEN_CERT" \
+    -config "$VAULTWARDEN_SSL_DIR/openssl.cnf"
 
-echo "✅ SSL certificate generated at $VAULTWARDEN_SSL_DIR"
+  echo "✅ SSL certificate generated at $VAULTWARDEN_SSL_DIR"
+else
+  echo "SSL certificate already exists. Skipping generation."
+fi
 
-# Deploy Vaultwarden with Docker Compose (now using HTTPS)
-echo "Deploying Vaultwarden..."
-cat <<EOF >$VAULTWARDEN_DIR/docker-compose.yml
+# Step 9: Deploy Vaultwarden with Docker Compose (if not already running)
+if ! docker ps | grep -q "vaultwarden"; then
+  echo "Deploying Vaultwarden..."
+  cat <<EOF >"$VAULTWARDEN_DIR/docker-compose.yml"
 version: '3'
 services:
   vaultwarden:
@@ -103,20 +130,22 @@ services:
     environment:
       - WEBSOCKET_ENABLED=true
       - SIGNUPS_ALLOWED=true
-      - ROCKET_TLS={certs="$VAULTWARDEN_CERT",key="$VAULTWARDEN_KEY"}
+      - ROCKET_TLS={certs="/ssl/vaultwarden.crt",key="/ssl/vaultwarden.key"}
       - ROCKET_PORT=443
       - ROCKET_ADDRESS=0.0.0.0
 EOF
 
-# Start Vaultwarden
-cd "$VAULTWARDEN_DIR"
-docker-compose up -d
+  # Start Vaultwarden
+  cd "$VAULTWARDEN_DIR"
+  docker-compose up -d
+  echo "Vaultwarden is now running. Access it at https://$HOSTNAME_FQDN or https://$HOST_IP"
+else
+  echo "Vaultwarden is already running. Skipping deployment."
+fi
 
-echo "Vaultwarden is now running. Access it at https://$HOSTNAME_FQDN or https://$HOST_IP"
-
-# Create ansible user
-echo "Creating ansible user..."
+# Step 10: Create ansible user (if it doesn't exist)
 if ! id "$ANSIBLE_USER" &>/dev/null; then
+  echo "Creating ansible user..."
   useradd -m -s /bin/bash "$ANSIBLE_USER"
   echo "$ANSIBLE_USER:$ANSIBLE_TMP_PASS" | chpasswd
   passwd --expire "$ANSIBLE_USER"
@@ -127,8 +156,10 @@ if ! id "$ANSIBLE_USER" &>/dev/null; then
   chmod 0440 /etc/sudoers.d/$ANSIBLE_USER
   echo "User $ANSIBLE_USER created with temporary password: $ANSIBLE_TMP_PASS"
 else
-  echo "User $ANSIBLE_USER already exists."
+  echo "Ansible user already exists. Skipping."
 fi
 
-echo "Done! Now copy the SSH key to your workstation:"
-echo "  ssh-copy-id $ANSIBLE_USER@$HOST_IP"
+# Final Output
+echo "✅ Homelab bootstrap process completed!"
+echo "Vaultwarden: https://$HOSTNAME_FQDN or https://$HOST_IP"
+echo "Copy SSH key to your workstation: ssh-copy-id $ANSIBLE_USER@$HOST_IP"

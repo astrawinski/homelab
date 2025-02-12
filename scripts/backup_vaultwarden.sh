@@ -34,10 +34,10 @@ start_vaultwarden() {
 backup_vaultwarden() {
     echo "Starting Vaultwarden backup..."
     stop_vaultwarden
-    mkdir -p "$BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR/data"
 
     echo "Copying data directory..."
-    rsync -av --progress "$DATA_DIR/" "$BACKUP_DIR/"
+    rsync -av --progress "$DATA_DIR/" "$BACKUP_DIR/data/"
 
     echo "Backup completed successfully!"
     start_vaultwarden
@@ -49,7 +49,7 @@ restore_vaultwarden() {
     stop_vaultwarden
 
     echo "Restoring data directory..."
-    rsync -av --progress "$BACKUP_DIR/" "$DATA_DIR/"
+    rsync -av --progress "$BACKUP_DIR/data" "$DATA_DIR/"
 
     echo "Setting correct permissions..."
     chown -R root:root "$DATA_DIR"

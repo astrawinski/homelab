@@ -143,7 +143,15 @@ else
   echo "Vaultwarden is already running. Skipping deployment."
 fi
 
-# Step 10: Create ansible user (if it doesn't exist)
+# Step 10: Install the Bitwarden CLI
+echo "Installing Bitwarden CLI..."
+apt install -y jq curl
+BW_CLI_URL="https://vaultwarden.net/download/bitwarden-cli/latest/linux64"
+curl -fsSL "$BW_CLI_URL" -o /usr/local/bin/bw
+chmod +x /usr/local/bin/bw
+echo "✅ Bitwarden CLI installed."
+
+# Step 11: Create ansible user (if it doesn't exist)
 if ! id "$ANSIBLE_USER" &>/dev/null; then
   echo "Creating ansible user..."
   useradd -m -s /bin/bash "$ANSIBLE_USER"

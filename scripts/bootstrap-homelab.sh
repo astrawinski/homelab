@@ -13,14 +13,16 @@ ANSIBLE_DIR="/home/$ANSIBLE_USER/.ssh"
 ANSIBLE_TMP_PASS="ChangeMeNow!"
 
 VAULTWARDEN_DIR="/opt/vaultwarden"
-VAULTWARDEN_DATA_DIR="$VAULTWARDEN_DATA_DIR/data"
+VAULTWARDEN_DATA_DIR="$VAULTWARDEN_DIR/data"
 VAULTWARDEN_SSL_DIR="$VAULTWARDEN_DIR/ssl"
 VAULTWARDEN_CERT="$VAULTWARDEN_SSL_DIR/vaultwarden.crt"
 VAULTWARDEN_KEY="$VAULTWARDEN_SSL_DIR/vaultwarden.key"
 
+BACKUP_PATH="/media/sf_E_DRIVE/vaultwarden_backup"  # Set your backup location
+
 CURRENT_USER=$(logname)
 
-## Detect hostname and IP for SSL certificate
+# Detect hostname and IP for SSL certificate
 HOSTNAME_FQDN=$(hostname -f 2>/dev/null || hostname)
 HOST_IP=$(hostname -I | awk '{print $1}')
 
@@ -39,63 +41,29 @@ systemctl start ssh
 ufw allow OpenSSH
 ufw enable
 
-# Detect if running inside VirtualBox
-if dmidecode -s system-product-name | grep -qi "VirtualBox"; then
-  echo "Running inside a VirtualBox VM. Ensuring shared folder access..."
-
-  # Ensure vboxsf group exists
-  if ! getent group vboxsf >/dev/null; then
-    groupadd vboxsf
-    echo "Created vboxsf group."
-  fi
-
-  # Add the current user to vboxsf group
-  if id "$CURRENT_USER" | grep -q "vboxsf"; then
-    echo "User $CURRENT_USER is already in vboxsf group."
-  else
-    usermod -aG vboxsf "$CURRENT_USER"
-    echo "Added $CURRENT_USER to vboxsf group."
-  fi
-
-  # Apply group changes immediately to the current terminal session
-  newgrp vboxsf <<EOF
-    echo "Group permissions applied immediately for $CURRENT_USER."
-EOF
-else
-  echo "Not running inside a VirtualBox VM. Skipping vboxsf setup."
+# Ensure the Vaultwarden backup exists
+if [[ ! -d "$BACKUP_PATH/data" ]]; then
+  echo "❌ ERROR: Vaultwarden backup not found at $BACKUP_PATH/data"
+  echo "Backup is **mandatory**. Please ensure the correct path is available before running this script."
+  exit 1
 fi
 
-# Ensure /opt/vaultwarden exists
+# Ensure Vaultwarden directories exist
 mkdir -p "$VAULTWARDEN_DATA_DIR"
 mkdir -p "$VAULTWARDEN_SSL_DIR"
 
-# Check for existing Vaultwarden data
-if [ -z "$(ls -A /opt/vaultwarden/data 2>/dev/null)" ]; then
-  echo "No existing Vaultwarden data found."
-  read -pr "Do you have a backup to restore? (y/N) " restore_choice
+# Restore Vaultwarden data
+echo "Restoring Vaultwarden data from $BACKUP_PATH..."
+rsync -av "$BACKUP_PATH/data/" "$VAULTWARDEN_DATA_DIR/"
+echo "✅ Vaultwarden data restored successfully."
 
-  if [[ "$restore_choice" =~ ^[Yy]$ ]]; then
-    read -pr "Enter the path to the backup directory (e.g., /media/sf_E_DRIVE/vaultwarden_backup): " backup_path
-    if [ -d "$backup_path" ]; then
-      echo "Restoring Vaultwarden data from $backup_path..."
-      cp -r "$backup_path"/* /opt/vaultwarden/data/
-      echo "Vaultwarden data restored successfully."
-    else
-      echo "Invalid backup path. Starting fresh."
-    fi
-  else
-    echo "No backup provided. Starting a fresh Vaultwarden instance."
-  fi
-else
-  echo "Existing Vaultwarden data found. Using current data."
-fi
-
+# Generate SSL certificate for:
 echo "Generating SSL certificate for:"
 echo "  - CN: $HOSTNAME_FQDN"
 echo "  - SAN: $HOST_IP"
 
 # Generate OpenSSL config file with SAN
-cat <<EOF >/opt/vaultwarden/ssl/openssl.cnf
+cat <<EOF >$VAULTWARDEN_SSL_DIR/openssl.cnf
 [req]
 distinguished_name = req_distinguished_name
 req_extensions = v3_req
@@ -140,11 +108,10 @@ services:
       - ROCKET_TLS={certs="$VAULTWARDEN_CERT",key="$VAULTWARDEN_KEY"}
       - ROCKET_PORT=443
       - ROCKET_ADDRESS=0.0.0.0
-
 EOF
 
 # Start Vaultwarden
-cd $VAULTWARDEN_DIR
+cd "$VAULTWARDEN_DIR"
 docker-compose up -d
 
 echo "Vaultwarden is now running. Access it at https://$HOSTNAME_FQDN or https://$HOST_IP"

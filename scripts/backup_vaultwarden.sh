@@ -37,7 +37,7 @@ backup_vaultwarden() {
     mkdir -p "$BACKUP_DIR"
 
     echo "Copying data directory..."
-    rsync -av --progress "$DATA_DIR" "$BACKUP_DIR/"
+    rsync -av --progress "$DATA_DIR/" "$BACKUP_DIR/"
 
     echo "Backup completed successfully!"
     start_vaultwarden
@@ -49,7 +49,7 @@ restore_vaultwarden() {
     stop_vaultwarden
 
     echo "Restoring data directory..."
-    rsync -av --progress "$BACKUP_DIR/data" "$VAULTWARDEN_DIR/"
+    rsync -av --progress "$BACKUP_DIR/data/" "$DATA_DIR/"
 
     echo "Setting correct permissions..."
     chown -R root:root "$DATA_DIR"
@@ -58,22 +58,21 @@ restore_vaultwarden() {
     start_vaultwarden
 }
 
-# Menu
-echo "Select an option:"
-echo "1) Backup Vaultwarden"
-echo "2) Restore Vaultwarden from backup"
-echo "3) Exit"
-read -pr "Enter choice: " backup_choice
-
-case $backup_choice in
-1) backup_vaultwarden ;;
-2) restore_vaultwarden ;;
-3)
-    echo "Exiting..."
-    exit 0
-    ;;
-*)
-    echo "Invalid choice! Exiting..."
+# Display usage information
+usage() {
+    echo "Usage: $0 {backup|restore}"
+    echo "  backup   - Creates a backup of Vaultwarden data in $BACKUP_DIR"
+    echo "  restore  - Restores Vaultwarden data from $BACKUP_DIR"
     exit 1
-    ;;
+}
+
+# Validate command-line arguments
+if [[ $# -ne 1 ]]; then
+    usage
+fi
+
+case "$1" in
+    backup) backup_vaultwarden ;;
+    restore) restore_vaultwarden ;;
+    *) usage ;;
 esac

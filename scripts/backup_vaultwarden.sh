@@ -5,9 +5,6 @@
 
 set -e # Exit immediately on error
 
-#!/bin/bash
-set -e # Exit immediately on error
-
 # Variables
 VAULTWARDEN_DIR="/opt/vaultwarden"
 BACKUP_DIR="/media/sf_E_DRIVE/vaultwarden_backup"
@@ -55,7 +52,7 @@ restore_vaultwarden() {
     rsync -av --progress "$BACKUP_DIR/data" "$VAULTWARDEN_DIR/"
 
     echo "Setting correct permissions..."
-    chown -R root:root "$DATA_DIR" "$SSL_DIR"
+    chown -R root:root "$DATA_DIR"
 
     echo "Restore completed successfully!"
     start_vaultwarden

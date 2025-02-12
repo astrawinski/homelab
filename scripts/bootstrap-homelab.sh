@@ -164,11 +164,10 @@ sudo cp "$VAULTWARDEN_CERT" /usr/local/share/ca-certificates/
 sudo cp "$VAULTWARDEN_CERT" /usr/share/ca-certificates/
 sudo update-ca-certificates
 sudo cp "$VAULTWARDEN_CERT" "$BW_CONFIG_DIR/"
-export NODE_EXTRA_CA_CERTS="$BW_CONFIG_DIR/vaultwarden.crt"
+echo "NODE_EXTRA_CA_CERTS=$BW_CONFIG_DIR/vaultwarden.crt" | sudo tee -a /etc/environment
 
 echo "✅ Bitwarden CLI configured for Vaultwarden."
 
 # Final Output
 echo "✅ Homelab bootstrap process completed!"
 echo "Vaultwarden: https://$HOSTNAME_FQDN or https://$HOST_IP"
-echo "Copy SSH key to your workstation: ssh-copy-id $ANSIBLE_USER@$HOST_IP"

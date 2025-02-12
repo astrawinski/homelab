@@ -130,12 +130,5 @@ else
   echo "User $ANSIBLE_USER already exists."
 fi
 
-# Generate SSH key for ansible user
-echo "Creating ansible user and SSH key..."
-useradd -m -s /bin/bash $ANSIBLE_USER
-mkdir -p /home/$ANSIBLE_USER/.ssh
-ssh-keygen -t ed25519 -f /home/$ANSIBLE_USER/.ssh/id_ed25519 -N ""
-chown -R $ANSIBLE_USER:$ANSIBLE_USER /home/$ANSIBLE_USER/.ssh
-
 echo "Done! Now copy the SSH key to your workstation:"
 echo "  ssh-copy-id $ANSIBLE_USER@$HOST_IP"

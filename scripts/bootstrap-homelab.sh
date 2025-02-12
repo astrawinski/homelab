@@ -20,8 +20,6 @@ VAULTWARDEN_KEY="$VAULTWARDEN_SSL_DIR/vaultwarden.key"
 
 BACKUP_PATH="/media/sf_E_DRIVE/vaultwarden_backup"  # Set your backup location
 
-CURRENT_USER=$(logname)
-
 # Detect hostname and IP for SSL certificate
 HOSTNAME_FQDN=$(hostname -f 2>/dev/null || hostname)
 HOST_IP=$(hostname -I | awk '{print $1}')

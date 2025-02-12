@@ -19,6 +19,8 @@ VAULTWARDEN_CERT="$VAULTWARDEN_SSL_DIR/vaultwarden.crt"
 VAULTWARDEN_KEY="$VAULTWARDEN_SSL_DIR/vaultwarden.key"
 
 BACKUP_PATH="/media/sf_E_DRIVE/vaultwarden_backup" # Backup location
+BW_CLI_PATH="/usr/local/bin/bw"
+BW_CONFIG_DIR="/root/.config/Bitwarden CLI"
 
 # Detect hostname and IP for SSL certificate
 HOSTNAME_FQDN=$(hostname -f 2>/dev/null || hostname)
@@ -29,7 +31,7 @@ echo "Checking for package updates..."
 apt update && apt upgrade -y
 
 # Step 2: Install required packages (if not installed)
-REQUIRED_PACKAGES=("docker.io" "docker-compose" "ufw" "git" "openssh-server" "openssl")
+REQUIRED_PACKAGES=("docker.io" "docker-compose" "ufw" "git" "openssh-server" "openssl" "curl" "unzip")
 for pkg in "${REQUIRED_PACKAGES[@]}"; do
   if ! dpkg -l | grep -qw "$pkg"; then
     echo "Installing $pkg..."
@@ -143,56 +145,28 @@ else
   echo "Vaultwarden is already running. Skipping deployment."
 fi
 
-# Step 10: Install the Bitwarden CLI
-echo "Installing Bitwarden CLI..."
-
-# Define variables
-BW_CLI_URL="https://vault.bitwarden.com/download/?app=cli&platform=linux"
-BW_CLI_ZIP="/tmp/bw-cli.zip"
-BW_CLI_DIR="/tmp/bw-cli"
-BW_CLI_BIN="/usr/local/bin/bw"
-
-# Ensure dependencies are installed
-apt install -y unzip curl jq
-
-# Download the latest Bitwarden CLI release
-curl -fsSL "$BW_CLI_URL" -o "$BW_CLI_ZIP"
-
-# Extract the binary
-mkdir -p "$BW_CLI_DIR"
-unzip -q "$BW_CLI_ZIP" -d "$BW_CLI_DIR"
-
-# Move the binary to a system path
-mv "$BW_CLI_DIR/bw" "$BW_CLI_BIN"
-chmod +x "$BW_CLI_BIN"
-
-# Clean up
-rm -rf "$BW_CLI_ZIP" "$BW_CLI_DIR"
-
-# Verify installation
-if command -v bw &>/dev/null; then
-    echo "✅ Bitwarden CLI installed successfully!"
+# Step 10: Install Bitwarden CLI
+if [[ ! -f "$BW_CLI_PATH" ]]; then
+  echo "Installing Bitwarden CLI..."
+  curl -Lso bw.zip "https://vault.bitwarden.com/download/?app=cli&platform=linux"
+  unzip -o bw.zip -d /usr/local/bin/
+  chmod +x /usr/local/bin/bw
+  rm bw.zip
+  echo "✅ Bitwarden CLI installed."
 else
-    echo "❌ ERROR: Bitwarden CLI installation failed!"
-    exit 1
+  echo "Bitwarden CLI already installed. Skipping."
 fi
 
+# Step 11: Configure Bitwarden CLI
+mkdir -p "$BW_CONFIG_DIR"
+bw config server "https://$HOST_IP"
+sudo cp "$VAULTWARDEN_CERT" /usr/local/share/ca-certificates/
+sudo cp "$VAULTWARDEN_CERT" /usr/share/ca-certificates/
+sudo update-ca-certificates
+sudo cp "$VAULTWARDEN_CERT" "$BW_CONFIG_DIR/"
+export NODE_EXTRA_CA_CERTS="$BW_CONFIG_DIR/vaultwarden.crt"
 
-# Step 11: Create ansible user (if it doesn't exist)
-if ! id "$ANSIBLE_USER" &>/dev/null; then
-  echo "Creating ansible user..."
-  useradd -m -s /bin/bash "$ANSIBLE_USER"
-  echo "$ANSIBLE_USER:$ANSIBLE_TMP_PASS" | chpasswd
-  passwd --expire "$ANSIBLE_USER"
-  mkdir -p "$ANSIBLE_DIR"
-  ssh-keygen -t ed25519 -f "$ANSIBLE_DIR/id_ed25519" -N ""
-  chown -R $ANSIBLE_USER:$ANSIBLE_USER "$ANSIBLE_DIR"
-  echo "$ANSIBLE_USER ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/$ANSIBLE_USER
-  chmod 0440 /etc/sudoers.d/$ANSIBLE_USER
-  echo "User $ANSIBLE_USER created with temporary password: $ANSIBLE_TMP_PASS"
-else
-  echo "Ansible user already exists. Skipping."
-fi
+echo "✅ Bitwarden CLI configured for Vaultwarden."
 
 # Final Output
 echo "✅ Homelab bootstrap process completed!"

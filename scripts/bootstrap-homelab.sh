@@ -145,11 +145,38 @@ fi
 
 # Step 10: Install the Bitwarden CLI
 echo "Installing Bitwarden CLI..."
-apt install -y jq curl
-BW_CLI_URL="https://vaultwarden.net/download/bitwarden-cli/latest/linux64"
-curl -fsSL "$BW_CLI_URL" -o /usr/local/bin/bw
-chmod +x /usr/local/bin/bw
-echo "✅ Bitwarden CLI installed."
+
+# Define variables
+BW_CLI_URL="https://vault.bitwarden.com/download/?app=cli&platform=linux"
+BW_CLI_ZIP="/tmp/bw-cli.zip"
+BW_CLI_DIR="/tmp/bw-cli"
+BW_CLI_BIN="/usr/local/bin/bw"
+
+# Ensure dependencies are installed
+apt install -y unzip curl jq
+
+# Download the latest Bitwarden CLI release
+curl -fsSL "$BW_CLI_URL" -o "$BW_CLI_ZIP"
+
+# Extract the binary
+mkdir -p "$BW_CLI_DIR"
+unzip -q "$BW_CLI_ZIP" -d "$BW_CLI_DIR"
+
+# Move the binary to a system path
+mv "$BW_CLI_DIR/bw" "$BW_CLI_BIN"
+chmod +x "$BW_CLI_BIN"
+
+# Clean up
+rm -rf "$BW_CLI_ZIP" "$BW_CLI_DIR"
+
+# Verify installation
+if command -v bw &>/dev/null; then
+    echo "✅ Bitwarden CLI installed successfully!"
+else
+    echo "❌ ERROR: Bitwarden CLI installation failed!"
+    exit 1
+fi
+
 
 # Step 11: Create ansible user (if it doesn't exist)
 if ! id "$ANSIBLE_USER" &>/dev/null; then

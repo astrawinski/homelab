@@ -66,9 +66,9 @@ echo "Select an option:"
 echo "1) Backup Vaultwarden"
 echo "2) Restore Vaultwarden from backup"
 echo "3) Exit"
-read -rp "Enter choice: " choice
+read -pr "Enter choice: " backup_choice
 
-case $choice in
+case $backup_choice in
 1) backup_vaultwarden ;;
 2) restore_vaultwarden ;;
 3)

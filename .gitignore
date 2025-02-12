@@ -2,3 +2,4 @@ scripts/unifi.sh
 scripts/unifi_devices_unifios.py
 docs/homelab-documentation.old.md
 logs/
+.vscode/launch.json

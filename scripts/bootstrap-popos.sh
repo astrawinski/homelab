@@ -3,8 +3,9 @@
 set -x  # Print each command before executing
 set -e  # Stop the script on uncaught errors
 
-sudo rsync -avh --progress /home/pop-os/ /media/pop-os/persist/home/pop-os
-
+# sudo rsync -avh --progress /home/pop-os/ /media/pop-os/persist
+sudo rsync -avh --progress /home/pop-os/ /media/pop-os/persist
+exit
 
 # Configure Git
 git config --global user.email "alan@strawinski.net"

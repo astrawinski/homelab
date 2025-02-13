@@ -80,8 +80,8 @@ sudo mv squashfs-root /mnt/rootfs
 sudo rsync -axHAX --info=progress2 /mnt/rootfs/squashfs-root/ /mnt/
 
 # Get UUIDs
-ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
-EFI_UUID=$(blkid -s UUID -o value "$EFI_PART")
+ROOT_UUID=$(sudo blkid -s UUID -o value "$ROOT_PART")
+EFI_UUID=$(sudo blkid -s UUID -o value "$EFI_PART")
 
 # Generate fstab
 echo "# Generated fstab" | sudo tee /mnt/etc/fstab &&
@@ -97,12 +97,14 @@ echo "UUID=$EFI_UUID /boot/efi vfat defaults 0 2" | sudo tee -a /mnt/etc/fstab &
 echo "/swap/swapfile none swap sw 0 0" | sudo tee -a /mnt/etc/fstab
 
 # Run system configuration inside chroot without stopping the script
+exit
 sudo chroot /mnt bash -c "
-    set -e  # Stop on errors
+    set -x
+    set -e
 
     # Install Bootloader
-    bootctl install --no-variables # Don't try to set LoaderSystemToken, since we're not using Secure Boot
-
+    bootctl install --no-variables
+    
     # Verify Bootloader Configuration
     ls /boot/efi/EFI
 
@@ -132,9 +134,9 @@ sudo chroot /mnt bash -c "
     echo "nameserver 1.1.1.1" > /etc/resolv.conf
 
     # Update Packages
-    apt update
-    apt upgrade -y
-    apt full-upgrade -y
+    #apt update
+    #apt upgrade -y
+    #apt full-upgrade -y
 
     # Enable Necessary Services
     #systemctl enable systemd-timesyncd   # Time synchronization

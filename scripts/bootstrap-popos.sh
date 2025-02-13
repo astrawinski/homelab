@@ -84,16 +84,24 @@ ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
 EFI_UUID=$(blkid -s UUID -o value "$EFI_PART")
 
 # Generate fstab
-echo "# Generated fstab" | sudo tee /mnt/etc/fstab
-echo "UUID=$ROOT_UUID / btrfs defaults,noatime,compress=zstd 0 1" | sudo tee -a /mnt/etc/fstab
-echo "UUID=$EFI_UUID /boot/efi vfat defaults 0 2" | sudo tee -a /mnt/etc/fstab
+echo "# Generated fstab" | sudo tee /mnt/etc/fstab &&
+
+echo "UUID=$ROOT_UUID / btrfs defaults,noatime,compress=zstd,subvol=@ 0 1" | sudo tee -a /mnt/etc/fstab &&
+echo "UUID=$ROOT_UUID /home btrfs defaults,noatime,compress=zstd,subvol=@home 0 2" | sudo tee -a /mnt/etc/fstab &&
+echo "UUID=$ROOT_UUID /var btrfs defaults,noatime,compress=zstd,subvol=@var 0 2" | sudo tee -a /mnt/etc/fstab &&
+echo "UUID=$ROOT_UUID /log btrfs defaults,noatime,compress=zstd,subvol=@log 0 2" | sudo tee -a /mnt/etc/fstab &&
+echo "UUID=$ROOT_UUID /cache btrfs defaults,noatime,compress=zstd,subvol=@cache 0 2" | sudo tee -a /mnt/etc/fstab &&
+echo "UUID=$ROOT_UUID /.snapshots btrfs defaults,noatime,compress=zstd,subvol=@snapshots 0 2" | sudo tee -a /mnt/etc/fstab &&
+echo "UUID=$ROOT_UUID /swap btrfs defaults,noatime,subvol=@swap 0 2" | sudo tee -a /mnt/etc/fstab &&
+echo "UUID=$EFI_UUID /boot/efi vfat defaults 0 2" | sudo tee -a /mnt/etc/fstab &&
+echo "/swap/swapfile none swap sw 0 0" | sudo tee -a /mnt/etc/fstab
 
 # Run system configuration inside chroot without stopping the script
 sudo chroot /mnt bash -c "
     set -e  # Stop on errors
 
     # Install Bootloader
-    bootctl install
+    bootctl install --no-variables # Don't try to set LoaderSystemToken, since we're not using Secure Boot
 
     # Verify Bootloader Configuration
     ls /boot/efi/EFI
@@ -104,7 +112,41 @@ sudo chroot /mnt bash -c "
 
     # Set System Configurations
     echo 'wsub-lap01' > /etc/hostname
-    echo 'nameserver 1.1.1.1' > /etc/resolv.conf
+
+    # Configure Timezone
+    ln -sf /usr/share/zoneinfo/America/Chicago /etc/localtime
+    dpkg-reconfigure -f noninteractive tzdata
+
+    # Configure Locale
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+    locale-gen
+    echo 'LANG=en_US.UTF-8' > /etc/default/locale
+    export LANG=en_US.UTF-8
+
+    # Create User
+    useradd -m -G sudo -s /bin/bash subnet
+    echo 'subnet:password' | chpasswd
+    echo 'subnet ALL=(ALL) NOPASSWD:ALL' | tee /etc/sudoers.d/subnet
+
+    # Enable DNS
+    echo "nameserver 1.1.1.1" > /etc/resolv.conf
+
+    # Update Packages
+    apt update
+    apt upgrade -y
+    apt full-upgrade -y
+
+    # Enable Necessary Services
+    #systemctl enable systemd-timesyncd   # Time synchronization
+    #systemctl enable thermald             # CPU thermal management (for laptops)
+    #systemctl enable systemd-resolved     # DNS resolution
+    #systemctl enable NetworkManager       # Networking
+
+    # Enable SSH
+    #systemctl enable ssh
+
+    # Rebuild Initramfs (ensure proper boot setup)
+    update-initramfs -u -k all
 "
 
 # Cleanup and Reboot

@@ -3,83 +3,149 @@
 set -x  # Print each command before executing
 set -e  # Stop the script on uncaught errors
 
-# Configure Git
-git config --global user.email "alan@strawinski.net"
-git config --global user.name "Alan Strawinski"
+# Variables
+ANSIBLE_USER="ansible"
+ANSIBLE_DIR="/home/$ANSIBLE_USER/.ssh"
+ANSIBLE_TMP_PASS="ChangeMeNow!"
 
-# Setup Temporary SSH Key for GitHub Authentication
-mkdir -p ~/.ssh
-[[ -f ~/.ssh/id_ed25519 ]] || ssh-keygen -t ed25519 -C "live-session" -f ~/.ssh/id_ed25519 -N ""
+VAULTWARDEN_DIR="/opt/vaultwarden"
+VAULTWARDEN_DATA_DIR="$VAULTWARDEN_DIR/data"
+VAULTWARDEN_SSL_DIR="$VAULTWARDEN_DIR/ssl"
+VAULTWARDEN_CERT="$VAULTWARDEN_SSL_DIR/vaultwarden.crt"
+VAULTWARDEN_KEY="$VAULTWARDEN_SSL_DIR/vaultwarden.key"
 
-echo "Add this SSH key to GitHub: https://github.com/settings/ssh"
-cat ~/.ssh/id_ed25519.pub
-read -p 'Press Enter after adding the key to GitHub...' 
+# Step 1: Update system packages (if needed)
+echo "Checking for package updates..."
+apt update && apt upgrade -y
 
-# Configure GitHub to use ssh
-git remote set-url origin git@github.com:astrawinski/homelab.git || true
+# Step 2: Install required packages (if not installed)
+REQUIRED_PACKAGES=("docker.io" "docker-compose" "ufw" "git" "openssh-server" "openssl" "curl" "unzip")
+for pkg in "${REQUIRED_PACKAGES[@]}"; do
+  if ! dpkg -l | grep -qw "$pkg"; then
+    echo "Installing $pkg..."
+    apt install -y "$pkg"
+  else
+    echo "$pkg is already installed. Skipping."
+  fi
+done
 
-# Identify your disk with lsblk, then Modify if needed.
-DISK="/dev/nvme0n1"
-EFI_PART="${DISK}p1"
-ROOT_PART="${DISK}p2"
+# Step 3: Enable & start SSH if not running
+if ! systemctl is-active --quiet ssh; then
+  echo "Starting SSH service..."
+  systemctl enable ssh
+  systemctl start ssh
+else
+  echo "SSH service is already running."
+fi
 
-# Wipe the Disk
-sudo wipefs --all "$DISK"
-sudo sgdisk --zap-all "$DISK"
+# Step 4: Configure UFW (skip if already configured)
+if ! ufw status | grep -q "OpenSSH"; then
+  echo "Configuring firewall for SSH..."
+  ufw allow OpenSSH
+  ufw enable
+else
+  echo "Firewall already configured. Skipping."
+fi
 
-# Create GPT Partition Table
-sudo parted "$DISK" -- mklabel gpt
+# Step 5: Ensure Vaultwarden backup exists before restoring
+if [[ ! -d "$BACKUP_PATH/data" ]]; then
+  echo "❌ ERROR: Vaultwarden backup not found at $BACKUP_PATH/data"
+  echo "Backup is **mandatory**. Please ensure the correct path is available before running this script."
+  exit 1
+fi
 
-# Create Partitions
-sudo parted "$DISK" -- mkpart ESP fat32 1MiB 1GiB
-sudo parted "$DISK" -- set 1 esp on
-sudo mkfs.fat -F32 "$EFI_PART"
+# Step 6: Ensure Vaultwarden directories exist
+mkdir -p "$VAULTWARDEN_DATA_DIR"
+mkdir -p "$VAULTWARDEN_SSL_DIR"
 
-sudo parted "$DISK" -- mkpart primary btrfs 1GiB 100%
-udo mkfs.btrfs -L POP_OS_ROOT "$ROOT_PART" -f
+# Step 7: Restore Vaultwarden data only if not already restored
+if [[ -z "$(ls -A $VAULTWARDEN_DATA_DIR 2>/dev/null)" ]]; then
+  echo "Restoring Vaultwarden data from $BACKUP_PATH..."
+  rsync -av "$BACKUP_PATH/data/" "$VAULTWARDEN_DATA_DIR/"
+  echo "✅ Vaultwarden data restored successfully."
+else
+  echo "Vaultwarden data already exists. Skipping restore."
+fi
 
-# Create Btrfs Subvolumes
-sudo mount "$ROOT_PART" /mnt
-sudo btrfs subvolume create /mnt/@
-sudo btrfs subvolume create /mnt/@home
-sudo btrfs subvolume create /mnt/@log
-sudo btrfs subvolume create /mnt/@cache
-sudo btrfs subvolume create /mnt/@snapshots
-sudo btrfs subvolume create /mnt/@var
-sudo btrfs subvolume create /mnt/@swap
-sudo umount /mnt
+# Step 8: Generate SSL certificate only if missing
+if [[ ! -f "$VAULTWARDEN_CERT" || ! -f "$VAULTWARDEN_KEY" ]]; then
+  echo "Generating SSL certificate for:"
+  echo "  - CN: $HOSTNAME_FQDN"
+  echo "  - SAN: $HOST_IP"
 
-# Mount Btrfs Subvolumes
-sudo mount -o noatime,compress=zstd,subvol=@ "$ROOT_PART" /mnt
-sudo mkdir -p /mnt/{boot,home,var,log,cache,.snapshots,swap}
-sudo mount -o noatime,compress=zstd,subvol=@home "$ROOT_PART" /mnt/home
-sudo mount -o noatime,compress=zstd,subvol=@var "$ROOT_PART" /mnt/var
-sudo mount -o noatime,compress=zstd,subvol=@log "$ROOT_PART" /mnt/log
-sudo mount -o noatime,compress=zstd,subvol=@cache "$ROOT_PART" /mnt/cache
-sudo mount -o noatime,compress=zstd,subvol=@snapshots "$ROOT_PART" /mnt/.snapshots
-sudo mount -o noatime,compress=zstd,subvol=@swap "$ROOT_PART" /mnt/swap
+  # Generate OpenSSL config file with SAN
+  cat <<EOF >"$VAULTWARDEN_SSL_DIR/openssl.cnf"
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+x509_extensions = v3_req
+prompt = no
 
-# Create Swap File
-sudo truncate -s 8G /mnt/swap/swapfile
-sudo chmod 600 /mnt/swap/swapfile
-sudo losetup -fP /mnt/swap/swapfile
-SWAP_DEVICE=$(losetup -j /mnt/swap/swapfile | cut -d: -f1)
-sudo mkswap "$SWAP_DEVICE"
-sudo swapon "$SWAP_DEVICE"
+  # Generate self-signed certificate
+  openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+    -keyout "$VAULTWARDEN_KEY" \
+    -out "$VAULTWARDEN_CERT" \
+    -config "$VAULTWARDEN_SSL_DIR/openssl.cnf"
 
-# Mount EFI Partition
-sudo mkdir -p /mnt/boot/efi
-sudo mount "$EFI_PART" /mnt/boot/efi
+  echo "✅ SSL certificate generated at $VAULTWARDEN_SSL_DIR"
+else
+  echo "SSL certificate already exists. Skipping generation."
+fi
+EOF
 
-# Extract Pop!_OS from ISO
-sudo unsquashfs /cdrom/casper/filesystem.squashfs
-sudo mkdir -p /mnt/rootfs
-sudo mv squashfs-root /mnt/rootfs
-sudo rsync -axHAX --info=progress2 /mnt/rootfs/squashfs-root/ /mnt/
+# Step 9: Deploy Vaultwarden with Docker Compose (if not already running)
+if ! docker ps | grep -q "vaultwarden"; then
+  echo "Deploying Vaultwarden..."
+  cat <<EOF >"$VAULTWARDEN_DIR/docker-compose.yml"
+version: '3'
+services:
+  vaultwarden:
+    image: bitwardenrs/server:latest
+    restart: unless-stopped
+    volumes:
+      - $VAULTWARDEN_DATA_DIR:/data
+      - $VAULTWARDEN_SSL_DIR:/ssl
+    ports:
+      - "443:443"
+    environment:
+      - WEBSOCKET_ENABLED=true
+      - SIGNUPS_ALLOWED=true
+      - ROCKET_TLS={certs="/ssl/vaultwarden.crt",key="/ssl/vaultwarden.key"}
+      - ROCKET_PORT=443
+      - ROCKET_ADDRESS=0.0.0.0
+EOF
 
-# Verify fstab
-blkid
+  # Start Vaultwarden
+  cd "$VAULTWARDEN_DIR"
+  docker-compose up -d
+  echo "Vaultwarden is now running. Access it at https://$HOSTNAME_FQDN or https://$HOST_IP"
+else
+  echo "Vaultwarden is already running. Skipping deployment."
+fi
 
-echo "Installation setup complete! Proceed with manual configurations."
+# Step 10: Install Bitwarden CLI
+if [[ ! -f "$BW_CLI_PATH" ]]; then
+  echo "Installing Bitwarden CLI..."
+  curl -Lso bw.zip "https://vault.bitwarden.com/download/?app=cli&platform=linux"
+  unzip -o bw.zip -d /usr/local/bin/
+  chmod +x /usr/local/bin/bw
+  rm bw.zip
+  echo "✅ Bitwarden CLI installed."
+else
+  echo "Bitwarden CLI already installed. Skipping."
+fi
 
+# Step 11: Configure Bitwarden CLI
+mkdir -p "$BW_CONFIG_DIR"
+bw config server "https://$HOST_IP"
+sudo cp "$VAULTWARDEN_CERT" /usr/local/share/ca-certificates/
+sudo cp "$VAULTWARDEN_CERT" /usr/share/ca-certificates/
+sudo update-ca-certificates
+sudo cp "$VAULTWARDEN_CERT" "$BW_CONFIG_DIR/"
+echo "NODE_EXTRA_CA_CERTS=$BW_CONFIG_DIR/vaultwarden.crt" | sudo tee -a /etc/environment
 
+echo "✅ Bitwarden CLI configured for Vaultwarden."
+
+# Final Output
+echo "✅ Homelab bootstrap process completed!"
+echo "Vaultwarden: https://$HOSTNAME_FQDN or https://$HOST_IP"

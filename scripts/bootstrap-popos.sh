@@ -1,19 +1,23 @@
 #!/bin/bash
 
-set -e  # Exit on error
+set -x  # Print each command before executing
+set -e  # Stop the script on uncaught errors
+
+# Configure Git
+git config --global user.email "alan@strawinski.net"
+git config --global user.name "Alan Strawinski"
 
 # Setup Temporary SSH Key for GitHub Authentication
 mkdir -p ~/.ssh
-ssh-keygen -t ed25519 -C "live-session" -f ~/.ssh/id_ed25519 -N ""
+if [[ ! -f ~/.ssh/id_ed25519 ]]; then
+    ssh-keygen -t ed25519 -C "live-session" -f ~/.ssh/id_ed25519 -N ""
+    echo "Add this SSH key to GitHub: https://github.com/settings/ssh"
+    cat ~/.ssh/id_ed25519.pub
+    read -p 'Press Enter after adding the key to GitHub...'
+fi
 
-echo "Add this SSH key to GitHub: https://github.com/settings/ssh"
-cat ~/.ssh/id_ed25519.pub
-read -p 'Press Enter after adding the key to GitHub...' 
-
-# Test GitHub SSH authentication
-ssh -T git@github.com
-
-echo "GitHub authentication setup complete! You can now clone and push repositories."
+# Configure GitHub to use ssh
+git remote set-url origin git@github.com:astrawinski/homelab.git || true
 
 # Identify your disk with lsblk, then Modify if needed.
 DISK="/dev/nvme0n1"
@@ -27,11 +31,12 @@ sudo sgdisk --zap-all "$DISK"
 # Create GPT Partition Table
 sudo parted "$DISK" -- mklabel gpt
 
-# Create Partitions
+# Create EFI Partition and Filesystem
 sudo parted "$DISK" -- mkpart ESP fat32 1MiB 1GiB
 sudo parted "$DISK" -- set 1 esp on
 sudo mkfs.fat -F32 "$EFI_PART"
 
+# Create Btrfs Partition and Filesystem
 sudo parted "$DISK" -- mkpart primary btrfs 1GiB 100%
 sudo mkfs.btrfs -L POP_OS_ROOT "$ROOT_PART" -f
 
@@ -71,7 +76,7 @@ sudo mount "$EFI_PART" /mnt/boot/efi
 # Extract Pop!_OS from ISO
 sudo unsquashfs /cdrom/casper/filesystem.squashfs
 sudo mkdir -p /mnt/rootfs
-sudo mv squashfs-root /mnt/rootfs/
+sudo mv squashfs-root /mnt/rootfs
 sudo rsync -axHAX --info=progress2 /mnt/rootfs/squashfs-root/ /mnt/
 
 # Verify fstab

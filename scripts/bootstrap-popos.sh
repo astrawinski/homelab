@@ -3,6 +3,9 @@
 set -x  # Print each command before executing
 set -e  # Stop the script on uncaught errors
 
+sudo rsync -avh --progress /home/pop-os/ /media/pop-os/persist/home/pop-os
+
+
 # Configure Git
 git config --global user.email "alan@strawinski.net"
 git config --global user.name "Alan Strawinski"
@@ -97,16 +100,12 @@ echo "UUID=$EFI_UUID /boot/efi vfat defaults 0 2" | sudo tee -a /mnt/etc/fstab &
 echo "/swap/swapfile none swap sw 0 0" | sudo tee -a /mnt/etc/fstab
 
 # Run system configuration inside chroot without stopping the script
-exit
 sudo chroot /mnt bash -c "
     set -x
     set -e
 
     # Install Bootloader
     bootctl install --no-variables
-    
-    # Verify Bootloader Configuration
-    ls /boot/efi/EFI
 
     # Create Boot Entry
     echo 'title Pop!_OS' | tee /boot/efi/loader/entries/pop_os.conf

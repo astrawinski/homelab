@@ -3,25 +3,15 @@
 set -x  # Print each command before executing
 set -e  # Stop the script on uncaught errors
 
-# sudo rsync -avh --progress /home/pop-os/ /media/pop-os/persist
-sudo rsync -avh --progress /home/pop-os/ /media/pop-os/persist
-exit
-
-# Configure Git
-git config --global user.email "alan@strawinski.net"
-git config --global user.name "Alan Strawinski"
-
-# Setup Temporary SSH Key for GitHub Authentication
-mkdir -p ~/.ssh
-if [[ ! -f ~/.ssh/id_ed25519 ]]; then
-    ssh-keygen -t ed25519 -C "live-session" -f ~/.ssh/id_ed25519 -N ""
-    echo "Add this SSH key to GitHub: https://github.com/settings/ssh"
-    cat ~/.ssh/id_ed25519.pub
-    read -p 'Press Enter after adding the key to GitHub...'
+# Ensure /media/pop-os/persist is mounted
+if mount | grep -q "/media/pop-os/persist"; then
+  # Copy contents from the USB drive to /home/pop-os
+  sudo rsync -axHAX --delete --info=progress2 /media/pop-os/persist/ /home/pop-os/
+else
+  echo "Persistence partition not mounted!"
 fi
 
-# Configure GitHub to use ssh
-git remote set-url origin git@github.com:astrawinski/homelab.git || true
+exit
 
 # Identify your disk with lsblk, then Modify if needed.
 DISK="/dev/nvme0n1"
@@ -150,6 +140,9 @@ sudo chroot /mnt bash -c "
     # Rebuild Initramfs (ensure proper boot setup)
     update-initramfs -u -k all
 "
+
+# Persist home directory changes to USB
+sudo rsync -axHAX --delete --info=progress2 /home/pop-os/ /media/pop-os/persist/
 
 # Cleanup and Reboot
 #sudo umount -R /mnt

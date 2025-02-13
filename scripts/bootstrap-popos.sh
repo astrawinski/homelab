@@ -79,8 +79,35 @@ sudo mkdir -p /mnt/rootfs
 sudo mv squashfs-root /mnt/rootfs
 sudo rsync -axHAX --info=progress2 /mnt/rootfs/squashfs-root/ /mnt/
 
-# Verify fstab
-blkid
+# Get UUIDs
+ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
+EFI_UUID=$(blkid -s UUID -o value "$EFI_PART")
 
-echo "Installation setup complete! Proceed with manual configurations."
+# Generate fstab
+echo "# Generated fstab" | sudo tee /mnt/etc/fstab
+echo "UUID=$ROOT_UUID / btrfs defaults,noatime,compress=zstd 0 1" | sudo tee -a /mnt/etc/fstab
+echo "UUID=$EFI_UUID /boot/efi vfat defaults 0 2" | sudo tee -a /mnt/etc/fstab
+
+# Run system configuration inside chroot without stopping the script
+sudo chroot /mnt bash -c "
+    set -e  # Stop on errors
+
+    # Install Bootloader
+    bootctl install
+
+    # Verify Bootloader Configuration
+    ls /boot/efi/EFI
+
+    # Create Boot Entry
+    echo 'title Pop!_OS' | tee /boot/efi/loader/entries/pop_os.conf
+    echo -e 'linux /vmlinuz\ninitrd /initrd.img\noptions root=UUID=$ROOT_UUID rw quiet splash' | tee -a /boot/efi/loader/entries/pop_os.conf
+
+    # Set System Configurations
+    echo 'wsub-lap01' > /etc/hostname
+    echo 'nameserver 1.1.1.1' > /etc/resolv.conf
+"
+
+# Cleanup and Reboot
+#sudo umount -R /mnt
+#sudo reboot
 

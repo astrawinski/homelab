@@ -6,6 +6,7 @@ set -e  # Stop the script on uncaught errors
 # Ensure /media/pop-os/persist is mounted
 if mount | grep -q "/media/pop-os/persist"; then
   # Copy contents from the USB drive to /home/pop-os
+<<<<<<< HEAD
   sudo rsync -axHAX --info=progress2 /media/pop-os/persist/ /home/pop-os/
 else
   echo "Persistence partition not mounted!"
@@ -13,6 +14,16 @@ else
 fi
 
 # Identify the correct disk with lsblk, then Modify if needed.
+=======
+  sudo rsync -axHAX --delete --info=progress2 /media/pop-os/persist/ /home/pop-os/
+else
+  echo "Persistence partition not mounted!"
+fi
+
+exit
+
+# Identify your disk with lsblk, then Modify if needed.
+>>>>>>> caf1c4a929a7ab9671c2124fd2f32c44cd44a48f
 DISK="/dev/nvme0n1"
 EFI_PART="${DISK}p1"
 ROOT_PART="${DISK}p2"
@@ -125,4 +136,34 @@ sudo rsync -axHAX --delete --info=progress2 /home/pop-os/ /media/pop-os/persist/
 # Final reboot (optional)
 # sudo reboot
 
+<<<<<<< HEAD
+=======
+    # Enable DNS
+    echo "nameserver 1.1.1.1" > /etc/resolv.conf
+
+    # Update Packages
+    #apt update
+    #apt upgrade -y
+    #apt full-upgrade -y
+
+    # Enable Necessary Services
+    #systemctl enable systemd-timesyncd   # Time synchronization
+    #systemctl enable thermald             # CPU thermal management (for laptops)
+    #systemctl enable systemd-resolved     # DNS resolution
+    #systemctl enable NetworkManager       # Networking
+
+    # Enable SSH
+    #systemctl enable ssh
+
+    # Rebuild Initramfs (ensure proper boot setup)
+    update-initramfs -u -k all
+"
+
+# Persist home directory changes to USB
+sudo rsync -axHAX --delete --info=progress2 /home/pop-os/ /media/pop-os/persist/
+
+# Cleanup and Reboot
+#sudo umount -R /mnt
+#sudo reboot
+>>>>>>> caf1c4a929a7ab9671c2124fd2f32c44cd44a48f
 

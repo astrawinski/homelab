@@ -100,7 +100,8 @@ set -x
 set -e
 
 # Bootloader Install
-bootctl install --no-variables
+mount -t efivarfs efivarfs /sys/firmware/efi/efivars
+bootctl install
 bootctl update
 
 # Create Boot Entry

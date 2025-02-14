@@ -5,31 +5,27 @@ set -e  # Stop the script on uncaught errors
 
 # Ensure /media/pop-os/persist is mounted
 if mount | grep -q "/media/pop-os/persist"; then
-  # Copy contents from the USB drive to /home/pop-os
-<<<<<<< HEAD
   sudo rsync -axHAX --info=progress2 /media/pop-os/persist/ /home/pop-os/
 else
   echo "Persistence partition not mounted!"
   exit 1
 fi
 
-# Identify the correct disk with lsblk, then Modify if needed.
-=======
-  sudo rsync -axHAX --delete --info=progress2 /media/pop-os/persist/ /home/pop-os/
-else
-  echo "Persistence partition not mounted!"
-fi
-
-exit
-
-# Identify your disk with lsblk, then Modify if needed.
->>>>>>> caf1c4a929a7ab9671c2124fd2f32c44cd44a48f
+# Identify the correct disk with lsblk
 DISK="/dev/nvme0n1"
 EFI_PART="${DISK}p1"
 ROOT_PART="${DISK}p2"
 
-# Wipe the Disk
-sudo wipefs --all "$DISK"
+# Ensure /mnt is clean before proceeding
+sudo umount -Rl /mnt 2>/dev/null || true
+
+# Unmount EFI if mounted
+if mount | grep -q "$EFI_PART"; then
+  sudo umount "$EFI_PART"
+fi
+
+# Wipe Disk
+sudo wipefs --all --force "$DISK"
 sudo sgdisk --zap-all "$DISK"
 
 # Create GPT Partition Table
@@ -46,26 +42,26 @@ sudo mkfs.btrfs -L POP_OS_ROOT "$ROOT_PART" -f
 
 # Create Btrfs Subvolumes
 sudo mount "$ROOT_PART" /mnt
-sudo btrfs subvolume create /mnt/@
-sudo btrfs subvolume create /mnt/@home
-sudo btrfs subvolume create /mnt/@log
-sudo btrfs subvolume create /mnt/@cache
-sudo btrfs subvolume create /mnt/@snapshots
-sudo btrfs subvolume create /mnt/@var
-sudo btrfs subvolume create /mnt/@swap
+for sub in @ @home @var @log @cache @snapshots @swap; do
+  sudo btrfs subvolume create /mnt/$sub
+done
 sudo umount /mnt
 
 # Mount Btrfs Subvolumes
 sudo mount -o noatime,compress=zstd,subvol=@ "$ROOT_PART" /mnt
 sudo mkdir -p /mnt/{boot,home,var,log,cache,.snapshots,swap}
-sudo mount -o noatime,compress=zstd,subvol=@home "$ROOT_PART" /mnt/home
-sudo mount -o noatime,compress=zstd,subvol=@var "$ROOT_PART" /mnt/var
-sudo mount -o noatime,compress=zstd,subvol=@log "$ROOT_PART" /mnt/log
-sudo mount -o noatime,compress=zstd,subvol=@cache "$ROOT_PART" /mnt/cache
-sudo mount -o noatime,compress=zstd,subvol=@snapshots "$ROOT_PART" /mnt/.snapshots
-sudo mount -o noatime,compress=zstd,subvol=@swap "$ROOT_PART" /mnt/swap
+for sub in home var log cache .snapshots swap; do
+  if [[ "$sub" == ".snapshots" ]]; then
+    subvolume="@snapshots"  # Handle snapshots without the dot
+  else
+    subvolume="@${sub}"
+  fi
+  sudo mount -o noatime,compress=zstd,subvol=$subvolume "$ROOT_PART" /mnt/$sub
+done
 
-# Create Swap File
+
+# Create Swap File (inside the @swap subvolume)
+sudo losetup -D  # Ensure no stale loop devices
 sudo truncate -s 8G /mnt/swap/swapfile
 sudo chmod 600 /mnt/swap/swapfile
 sudo losetup -fP /mnt/swap/swapfile
@@ -77,12 +73,11 @@ sudo swapon "$SWAP_DEVICE"
 sudo mkdir -p /mnt/boot/efi
 sudo mount "$EFI_PART" /mnt/boot/efi
 
-# Bind mount virtual filesystems inside chroot
-sudo mkdir -p /mnt/{dev,proc,sys,run}
-sudo mount --bind /dev /mnt/dev
-sudo mount --bind /proc /mnt/proc
-sudo mount --bind /sys /mnt/sys
-sudo mount --bind /run /mnt/run
+# Bind Virtual Filesystems
+for dir in dev dev/pts proc sys run; do
+  sudo mkdir -p /mnt/$dir  # Create the directories if they don't exist
+  sudo mount --bind /$dir /mnt/$dir
+done
 
 # Extract Pop!_OS from ISO
 sudo unsquashfs /cdrom/casper/filesystem.squashfs
@@ -99,71 +94,38 @@ echo "# Generated fstab" | sudo tee /mnt/etc/fstab
 echo "UUID=$ROOT_UUID / btrfs defaults,noatime,compress=zstd 0 0" | sudo tee -a /mnt/etc/fstab
 echo "UUID=$EFI_UUID /boot/efi vfat defaults 0 0" | sudo tee -a /mnt/etc/fstab
 
-# Chroot into new system and configure
+# Chroot Configuration
 sudo chroot /mnt bash <<'EOF'
-  set -x
-  set -e
+set -x
+set -e
 
-  # Bootloader Install
-  bootctl install --no-variables
+# Bootloader Install
+bootctl install --no-variables
+bootctl update
 
-  # Create Boot Entry
-  echo 'title Pop!_OS' > /boot/efi/loader/entries/pop_os.conf
-  echo -e 'linux /vmlinuz\ninitrd /initrd.img\noptions root=UUID=$ROOT_UUID rw quiet splash' >> /boot/efi/loader/entries/pop_os.conf
+# Create Boot Entry
+echo 'title Pop!_OS' > /boot/efi/loader/entries/pop_os.conf
+echo -e 'linux /vmlinuz\ninitrd /initrd.img\noptions root=UUID=$(blkid -s UUID -o value /dev/nvme0n1p2) rw quiet splash' >> /boot/efi/loader/entries/pop_os.conf
 
-  # Configure hostname and locale
-  echo 'wsub-lap01' > /etc/hostname
-  ln -sf /usr/share/zoneinfo/America/Chicago /etc/localtime
-  dpkg-reconfigure -f noninteractive tzdata
-  echo 'en_US.UTF-8 UTF-8' > /etc/locale.gen
-  locale-gen
-  echo 'LANG=en_US.UTF-8' > /etc/default/locale
+# System Configurations
+echo 'wsub-lap01' > /etc/hostname
+ln -sf /usr/share/zoneinfo/America/Chicago /etc/localtime
+dpkg-reconfigure -f noninteractive tzdata
+echo 'en_US.UTF-8 UTF-8' > /etc/locale.gen
+locale-gen
 
-  # Create a user and configure sudo
-  useradd -m -G sudo -s /bin/bash subnet
-  echo 'subnet:password' | chpasswd
-  echo 'subnet ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/subnet
+# User Setup
+useradd -m -G sudo -s /bin/bash subnet
+echo 'subnet:password' | chpasswd
+echo 'subnet ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/subnet
 
-  # Set up network
-  echo 'nameserver 1.1.1.1' > /etc/resolv.conf
+# Cleanup and exit chroot
+exit
 EOF
 
-# Unmount filesystems
+# Unmount Filesystems
 sudo umount -Rl /mnt
-# Persist home directory changes to USB
+
+# Persist Changes to USB
 sudo rsync -axHAX --delete --info=progress2 /home/pop-os/ /media/pop-os/persist/
-
-# Final reboot (optional)
-# sudo reboot
-
-<<<<<<< HEAD
-=======
-    # Enable DNS
-    echo "nameserver 1.1.1.1" > /etc/resolv.conf
-
-    # Update Packages
-    #apt update
-    #apt upgrade -y
-    #apt full-upgrade -y
-
-    # Enable Necessary Services
-    #systemctl enable systemd-timesyncd   # Time synchronization
-    #systemctl enable thermald             # CPU thermal management (for laptops)
-    #systemctl enable systemd-resolved     # DNS resolution
-    #systemctl enable NetworkManager       # Networking
-
-    # Enable SSH
-    #systemctl enable ssh
-
-    # Rebuild Initramfs (ensure proper boot setup)
-    update-initramfs -u -k all
-"
-
-# Persist home directory changes to USB
-sudo rsync -axHAX --delete --info=progress2 /home/pop-os/ /media/pop-os/persist/
-
-# Cleanup and Reboot
-#sudo umount -R /mnt
-#sudo reboot
->>>>>>> caf1c4a929a7ab9671c2124fd2f32c44cd44a48f
 

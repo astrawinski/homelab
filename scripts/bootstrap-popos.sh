@@ -3,27 +3,16 @@
 set -x  # Print each command before executing
 set -e  # Stop the script on uncaught errors
 
-# sudo rsync -avh --progress /home/pop-os/ /media/pop-os/persist
-sudo rsync -avh --progress /home/pop-os/ /media/pop-os/persist
-exit
-
-# Configure Git
-git config --global user.email "alan@strawinski.net"
-git config --global user.name "Alan Strawinski"
-
-# Setup Temporary SSH Key for GitHub Authentication
-mkdir -p ~/.ssh
-if [[ ! -f ~/.ssh/id_ed25519 ]]; then
-    ssh-keygen -t ed25519 -C "live-session" -f ~/.ssh/id_ed25519 -N ""
-    echo "Add this SSH key to GitHub: https://github.com/settings/ssh"
-    cat ~/.ssh/id_ed25519.pub
-    read -p 'Press Enter after adding the key to GitHub...'
+# Ensure /media/pop-os/persist is mounted
+if mount | grep -q "/media/pop-os/persist"; then
+  # Copy contents from the USB drive to /home/pop-os
+  sudo rsync -axHAX --info=progress2 /media/pop-os/persist/ /home/pop-os/
+else
+  echo "Persistence partition not mounted!"
+  exit 1
 fi
 
-# Configure GitHub to use ssh
-git remote set-url origin git@github.com:astrawinski/homelab.git || true
-
-# Identify your disk with lsblk, then Modify if needed.
+# Identify the correct disk with lsblk, then Modify if needed.
 DISK="/dev/nvme0n1"
 EFI_PART="${DISK}p1"
 ROOT_PART="${DISK}p2"
@@ -77,6 +66,13 @@ sudo swapon "$SWAP_DEVICE"
 sudo mkdir -p /mnt/boot/efi
 sudo mount "$EFI_PART" /mnt/boot/efi
 
+# Bind mount virtual filesystems inside chroot
+sudo mkdir -p /mnt/{dev,proc,sys,run}
+sudo mount --bind /dev /mnt/dev
+sudo mount --bind /proc /mnt/proc
+sudo mount --bind /sys /mnt/sys
+sudo mount --bind /run /mnt/run
+
 # Extract Pop!_OS from ISO
 sudo unsquashfs /cdrom/casper/filesystem.squashfs
 sudo mkdir -p /mnt/rootfs
@@ -88,70 +84,45 @@ ROOT_UUID=$(sudo blkid -s UUID -o value "$ROOT_PART")
 EFI_UUID=$(sudo blkid -s UUID -o value "$EFI_PART")
 
 # Generate fstab
-echo "# Generated fstab" | sudo tee /mnt/etc/fstab &&
+echo "# Generated fstab" | sudo tee /mnt/etc/fstab
+echo "UUID=$ROOT_UUID / btrfs defaults,noatime,compress=zstd 0 0" | sudo tee -a /mnt/etc/fstab
+echo "UUID=$EFI_UUID /boot/efi vfat defaults 0 0" | sudo tee -a /mnt/etc/fstab
 
-echo "UUID=$ROOT_UUID / btrfs defaults,noatime,compress=zstd,subvol=@ 0 1" | sudo tee -a /mnt/etc/fstab &&
-echo "UUID=$ROOT_UUID /home btrfs defaults,noatime,compress=zstd,subvol=@home 0 2" | sudo tee -a /mnt/etc/fstab &&
-echo "UUID=$ROOT_UUID /var btrfs defaults,noatime,compress=zstd,subvol=@var 0 2" | sudo tee -a /mnt/etc/fstab &&
-echo "UUID=$ROOT_UUID /log btrfs defaults,noatime,compress=zstd,subvol=@log 0 2" | sudo tee -a /mnt/etc/fstab &&
-echo "UUID=$ROOT_UUID /cache btrfs defaults,noatime,compress=zstd,subvol=@cache 0 2" | sudo tee -a /mnt/etc/fstab &&
-echo "UUID=$ROOT_UUID /.snapshots btrfs defaults,noatime,compress=zstd,subvol=@snapshots 0 2" | sudo tee -a /mnt/etc/fstab &&
-echo "UUID=$ROOT_UUID /swap btrfs defaults,noatime,subvol=@swap 0 2" | sudo tee -a /mnt/etc/fstab &&
-echo "UUID=$EFI_UUID /boot/efi vfat defaults 0 2" | sudo tee -a /mnt/etc/fstab &&
-echo "/swap/swapfile none swap sw 0 0" | sudo tee -a /mnt/etc/fstab
+# Chroot into new system and configure
+sudo chroot /mnt bash <<'EOF'
+  set -x
+  set -e
 
-# Run system configuration inside chroot without stopping the script
-sudo chroot /mnt bash -c "
-    set -x
-    set -e
+  # Bootloader Install
+  bootctl install --no-variables
 
-    # Install Bootloader
-    bootctl install --no-variables
+  # Create Boot Entry
+  echo 'title Pop!_OS' > /boot/efi/loader/entries/pop_os.conf
+  echo -e 'linux /vmlinuz\ninitrd /initrd.img\noptions root=UUID=$ROOT_UUID rw quiet splash' >> /boot/efi/loader/entries/pop_os.conf
 
-    # Create Boot Entry
-    echo 'title Pop!_OS' | tee /boot/efi/loader/entries/pop_os.conf
-    echo -e 'linux /vmlinuz\ninitrd /initrd.img\noptions root=UUID=$ROOT_UUID rw quiet splash' | tee -a /boot/efi/loader/entries/pop_os.conf
+  # Configure hostname and locale
+  echo 'wsub-lap01' > /etc/hostname
+  ln -sf /usr/share/zoneinfo/America/Chicago /etc/localtime
+  dpkg-reconfigure -f noninteractive tzdata
+  echo 'en_US.UTF-8 UTF-8' > /etc/locale.gen
+  locale-gen
+  echo 'LANG=en_US.UTF-8' > /etc/default/locale
 
-    # Set System Configurations
-    echo 'wsub-lap01' > /etc/hostname
+  # Create a user and configure sudo
+  useradd -m -G sudo -s /bin/bash subnet
+  echo 'subnet:password' | chpasswd
+  echo 'subnet ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/subnet
 
-    # Configure Timezone
-    ln -sf /usr/share/zoneinfo/America/Chicago /etc/localtime
-    dpkg-reconfigure -f noninteractive tzdata
+  # Set up network
+  echo 'nameserver 1.1.1.1' > /etc/resolv.conf
+EOF
 
-    # Configure Locale
-    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
-    locale-gen
-    echo 'LANG=en_US.UTF-8' > /etc/default/locale
-    export LANG=en_US.UTF-8
+# Unmount filesystems
+sudo umount -Rl /mnt
+# Persist home directory changes to USB
+sudo rsync -axHAX --delete --info=progress2 /home/pop-os/ /media/pop-os/persist/
 
-    # Create User
-    useradd -m -G sudo -s /bin/bash subnet
-    echo 'subnet:password' | chpasswd
-    echo 'subnet ALL=(ALL) NOPASSWD:ALL' | tee /etc/sudoers.d/subnet
+# Final reboot (optional)
+# sudo reboot
 
-    # Enable DNS
-    echo "nameserver 1.1.1.1" > /etc/resolv.conf
-
-    # Update Packages
-    #apt update
-    #apt upgrade -y
-    #apt full-upgrade -y
-
-    # Enable Necessary Services
-    #systemctl enable systemd-timesyncd   # Time synchronization
-    #systemctl enable thermald             # CPU thermal management (for laptops)
-    #systemctl enable systemd-resolved     # DNS resolution
-    #systemctl enable NetworkManager       # Networking
-
-    # Enable SSH
-    #systemctl enable ssh
-
-    # Rebuild Initramfs (ensure proper boot setup)
-    update-initramfs -u -k all
-"
-
-# Cleanup and Reboot
-#sudo umount -R /mnt
-#sudo reboot
 
